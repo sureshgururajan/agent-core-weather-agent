@@ -47,6 +47,18 @@ class WeatherAgentStack(Stack):
             )
         )
 
+        # Add Bedrock permissions for Strands agent to use LLMs
+        agent_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream",
+                ],
+                resources=["*"],
+            )
+        )
+
         # Add any additional permissions your weather service needs
         # Example: if calling external APIs or accessing other AWS services
         agent_execution_role.add_to_policy(
@@ -89,7 +101,7 @@ class WeatherAgentStack(Stack):
         # Create AgentCore Runtime
         agent_runtime_artifact = AgentRuntimeArtifact.from_ecr_repository(
             agent_repository,
-            "v1.0.4"
+            "v2.0.4"
         )
 
         runtime = Runtime(
