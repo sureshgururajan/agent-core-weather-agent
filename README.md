@@ -1,10 +1,10 @@
 # Weather Agent for AgentCore Runtime
 
-AWS CDK Python application for deploying a weather service agent to Amazon Bedrock AgentCore Runtime.
+AWS CDK Python application for deploying a weather service agent to Amazon Bedrock AgentCore Runtime using the Strands SDK.
 
 ## Overview
 
-This project demonstrates how to build and deploy a containerized agent to AWS AgentCore Runtime using AWS CDK. The weather agent provides a simple REST API for retrieving weather information.
+This project demonstrates how to build and deploy an AI agent to AWS AgentCore Runtime using AWS CDK and the Strands Agents SDK. The weather agent uses Claude 4.5 Sonnet and provides weather information through both conversational prompts and structured API calls.
 
 ## Prerequisites
 
@@ -19,13 +19,15 @@ This project demonstrates how to build and deploy a containerized agent to AWS A
 .
 ├── app.py                      # CDK app entry point
 ├── cdk.json                    # CDK configuration
-├── requirements.txt            # Python dependencies (CDK + boto3)
+├── requirements.txt            # Python dependencies (CDK + boto3 + python-dotenv)
+├── .env                        # Environment configuration (gitignored)
+├── .env.example                # Example environment configuration
 ├── stacks/
 │   └── agent_stack.py         # CDK stack definition
 ├── agent/
 │   ├── Dockerfile             # Container definition
-│   ├── requirements.txt       # Agent dependencies (Flask)
-│   └── weather_agent.py       # Weather service implementation
+│   ├── requirements.txt       # Agent dependencies (strands-agents, bedrock-agentcore)
+│   └── weather_agent.py       # Weather agent implementation using Strands SDK
 └── test_weather_agent.py      # Test script for invoking the agent
 ```
 
@@ -42,7 +44,13 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. Bootstrap CDK (first time only):
+3. Configure environment variables:
+```bash
+cp .env.example .env
+# Edit .env with your AWS account details
+```
+
+4. Bootstrap CDK (first time only):
 ```bash
 cdk bootstrap aws://ACCOUNT_ID/us-west-2
 ```
@@ -59,7 +67,7 @@ cdk deploy
 
 This creates:
 - ECR repository for the Docker image
-- IAM execution role with necessary permissions
+- IAM execution role with Bedrock and CloudWatch permissions
 - AgentCore Runtime configuration
 
 ### 2. Build and Push Docker Image
@@ -71,8 +79,8 @@ aws ecr get-login-password --region us-west-2 | finch login --username AWS --pas
 
 # Build and push
 finch build -t weather-agent ./agent
-finch tag weather-agent:latest ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/weather-agent:v1.0.3
-finch push ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/weather-agent:v1.0.3
+finch tag weather-agent:latest ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/weather-agent:v2.1.1
+finch push ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/weather-agent:v2.1.1
 ```
 
 Using Docker:
@@ -82,8 +90,8 @@ aws ecr get-login-password --region us-west-2 | docker login --username AWS --pa
 
 # Build and push
 docker build -t weather-agent ./agent
-docker tag weather-agent:latest ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/weather-agent:v1.0.3
-docker push ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/weather-agent:v1.0.3
+docker tag weather-agent:latest ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/weather-agent:v2.1.1
+docker push ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/weather-agent:v2.1.1
 ```
 
 ### 3. Update CDK Stack with New Image Version
@@ -110,6 +118,7 @@ import uuid
 
 client = boto3.client('bedrock-agentcore', region_name='us-west-2')
 
+# Weather query
 payload = json.dumps({
     "action": "get_weather",
     "parameters": {
@@ -117,8 +126,11 @@ payload = json.dumps({
     }
 })
 
+# Or conversational prompt
+# payload = json.dumps({"prompt": "What's the weather like in Seattle?"})
+
 response = client.invoke_agent_runtime(
-    agentRuntimeArn='arn:aws:bedrock-agentcore:us-west-2:ACCOUNT_ID:runtime/weather_agent_runtime-RUNTIME_ID',
+    agentRuntimeArn='arn:aws:bedrock-agentcore:us-west-2:ACCOUNT_ID:runtime/RUNTIME_ID',
     runtimeSessionId=f'session-{uuid.uuid4()}',
     payload=payload,
     qualifier="DEFAULT"
@@ -134,7 +146,7 @@ print(result)
 1. Navigate to Amazon Bedrock AgentCore in the AWS Console
 2. Select your runtime: `weather_agent_runtime`
 3. Choose the DEFAULT endpoint
-4. Test with input:
+4. Test with structured input:
 ```json
 {
   "action": "get_weather",
@@ -144,39 +156,73 @@ print(result)
 }
 ```
 
-## Agent Endpoints
+Or conversational input:
+```json
+{
+  "prompt": "What's the weather in Tokyo?"
+}
+```
 
-The weather agent exposes the following endpoints:
+## Architecture
 
+### Strands SDK Integration
+
+The agent uses the Strands Agents SDK with:
+- `@tool` decorator for defining the weather tool
+- `BedrockAgentCoreApp` for AgentCore Runtime integration
+- `BedrockModel` configured with Claude 4.5 Sonnet
+- Automatic tool discovery and invocation
+
+### Agent Endpoints
+
+The agent exposes:
 - `GET /ping` - Health check (required by AgentCore)
-- `GET /health` - Health check
 - `POST /invocations` - Main AgentCore Runtime entry point
-- `POST /invoke` - Alternative invocation endpoint
-- `POST /weather` - Direct weather query endpoint
+
+### Model Configuration
+
+The agent uses Claude 4.5 Sonnet via the inference profile:
+- Model ID: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`
+- Configured in `agent/weather_agent.py`
 
 ## Configuration
 
 ### Environment Variables
 
-Configure in `stacks/agent_stack.py`:
+Runtime environment variables (configured in `stacks/agent_stack.py`):
 - `PORT`: Server port (default: 8080)
-- `WEATHER_API_KEY`: API key for weather service (optional)
+- `WEATHER_API_KEY`: API key for weather service (demo value)
+
+Test script configuration (`.env` file):
+- `AWS_ACCOUNT_ID`: Your AWS account ID
+- `AWS_REGION`: AWS region (default: us-west-2)
+- `RUNTIME_ID`: AgentCore Runtime ID
 
 ### IAM Permissions
 
 The execution role includes:
 - CloudWatch Logs permissions
+- Bedrock model invocation permissions (InvokeModel, InvokeModelWithResponseStream)
 - Secrets Manager access (for tagged resources)
 - Trust policy for bedrock-agentcore service
 
 ## Customization
 
-To integrate with a real weather API:
+### Integrating a Real Weather API
 
-1. Update `agent/weather_agent.py` to call your weather service
-2. Add API credentials to AWS Secrets Manager
-3. Tag the secret with `Agent=WeatherAgent`
-4. Rebuild and redeploy
+1. Update the `get_weather` function in `agent/weather_agent.py`
+2. Add API credentials to environment variables or Secrets Manager
+3. Rebuild and redeploy
+
+### Changing the Model
+
+Update the model configuration in `agent/weather_agent.py`:
+```python
+from strands.models import BedrockModel
+
+model = BedrockModel(model_id="anthropic.claude-3-5-sonnet-20241022-v2:0")
+agent = Agent(name="WeatherAgent", model=model, tools=[get_weather])
+```
 
 ## Useful Commands
 
@@ -201,10 +247,12 @@ Check the AWS Console under Amazon Bedrock > AgentCore > Runtimes
 ### Common Issues
 
 - **Health checks failing**: Ensure `/ping` endpoint returns 200 OK
-- **Runtime not updating**: Use versioned image tags instead of `latest`
-- **Permission errors**: Verify IAM role trust policy includes `bedrock-agentcore.amazonaws.com`
+- **Runtime not updating**: Use versioned image tags (v2.1.1, v2.1.2, etc.) instead of `latest`
+- **Permission errors**: Verify IAM role includes Bedrock invocation permissions
+- **Model access errors**: Ensure the model is enabled in your AWS account
 
 ## Resources
 
 - [AgentCore Runtime Documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/)
+- [Strands Agents Documentation](https://strandsagents.com/latest/documentation/)
 - [AWS CDK Python Reference](https://docs.aws.amazon.com/cdk/api/v2/python/)
