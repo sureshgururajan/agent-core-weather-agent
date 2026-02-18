@@ -101,7 +101,7 @@ class WeatherAgentStack(Stack):
         # Create AgentCore Runtime
         agent_runtime_artifact = AgentRuntimeArtifact.from_ecr_repository(
             agent_repository,
-            "v2.0.4"
+            "v2.1.1"
         )
 
         runtime = Runtime(

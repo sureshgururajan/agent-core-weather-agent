@@ -1,5 +1,6 @@
 import os
 from strands import Agent, tool
+from strands.models import BedrockModel
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
 # Environment variables from AgentCore Runtime
@@ -29,8 +30,11 @@ def get_weather(location: str) -> dict:
     
     return weather_data
 
-# Create the Strands agent with the weather tool
-agent = Agent(name="WeatherAgent", tools=[get_weather])
+# Configure Claude 4.5 Sonnet model via inference profile
+model = BedrockModel(model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+
+# Create the Strands agent with the weather tool and custom model
+agent = Agent(name="WeatherAgent", model=model, tools=[get_weather])
 
 @app.entrypoint
 def invoke(payload):
