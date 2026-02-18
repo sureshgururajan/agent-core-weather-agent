@@ -102,5 +102,6 @@ class WeatherAgentStack(Stack):
             description="Weather service agent runtime",
             environment_variables={
                 "PORT": "8080",
+                "WEATHER_API_KEY": "demo-api-key-12345",
             }
         )
